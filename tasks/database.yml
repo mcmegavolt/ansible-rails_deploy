@@ -1,20 +1,42 @@
 ---
 
 - name: Create PostgreSQL user
-  postgresql_user:
-    login_host: '{{ rails_deploy_database_host }}'
-    port: '{{ rails_deploy_database_port }}'
-    login_user: '{{ rails_deploy_postgresql_super_username }}'
-    login_password: '{{ rails_deploy_database_super_password }}'
-    name: '{{ rails_deploy_service }}'
-    password: '{{ rails_deploy_database_user_password }}'
-    encrypted: False
-    state: 'present'
-    role_attr_flags: '{{ rails_deploy_database_user_role_attrs }}'
+  # postgresql_user:
+  #   login_host: '{{ rails_deploy_database_host }}'
+  #   port: '{{ rails_deploy_database_port }}'
+  #   login_user: '{{ rails_deploy_postgresql_super_username }}'
+  #   login_password: '{{ rails_deploy_database_super_password }}'
+  #   name: '{{ rails_deploy_service }}'
+  #   password: '{{ rails_deploy_database_user_password }}'
+  #   encrypted: False
+  #   state: 'present'
+  #   role_attr_flags: '{{ rails_deploy_database_user_role_attrs }}'
+  #
+  # when: rails_deploy_database_adapter == 'postgresql' and
+  #       inventory_hostname == rails_deploy_hosts_master
+  # become_user: '{{ rails_deploy_postgresql_super_username }}'
 
-  when: rails_deploy_database_adapter == 'postgresql' and
-        inventory_hostname == rails_deploy_hosts_master
-  become_user: '{{ rails_deploy_postgresql_super_username }}'
+  postgresql_user:
+    name: '{{ item.name | d(item.role) }}'
+    port: '{{ item.port | d(postgresql__port if postgresql__port else omit) }}'
+    password: '{{ item.password | d(lookup("password",
+                  secret + "/postgresql/" + postgresql__password_hostname +
+                  "/" + (item.port | d(postgresql__port)) +
+                  "/credentials/" + item.name | d(item.role) + "/password " +
+                  "length=" + postgresql__password_length + " chars=" + postgresql__password_characters)) }}'
+    encrypted: '{{ item.encrypted | d(True) }}'
+    expires: '{{ item.expires | d(omit) }}'
+    role_attr_flags: '{{ (item.flags|d() | join(",")) | d(omit) }}'
+    state: 'present'
+  with_flattened:
+    - '{{ postgresql__roles }}'
+    - '{{ postgresql_roles|d([]) }}'
+    - '{{ postgresql__dependent_roles }}'
+  become_user: '{{ postgresql__user }}'
+  delegate_to: '{{ postgresql__delegate_to }}'
+  when: (((item.name|d() and item.name) or (item.role|d() and item.role)) and
+         (item.state is undefined or item.state != 'absent'))
+  no_log: True
 
 - name: Create PostgreSQL database if enabled
   postgresql_db:
